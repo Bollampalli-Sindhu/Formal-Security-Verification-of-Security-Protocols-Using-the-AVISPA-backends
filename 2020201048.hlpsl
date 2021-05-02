@@ -1,0 +1,500 @@
+%%% Implementation of the protocol:
+%%% "Certificateless Signcryption-Based User Access Control Scheme for IoT Environment"
+
+ 
+
+%%% We have three basic roles for the user (U), gateway node (GN) and a sensing device Si;
+%%% two mandatory roles for the session and goal & environment
+
+ 
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Role for the user (U)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+role user (U, GN, Si: agent, 
+          %%% H is one-way hash function
+          H: hash_func,
+          Snd, Rcv: channel(dy))
+
+ 
+
+% Player: U 
+played_by U
+  
+def=
+        local 
+                State:  nat,
+                G, Yg, Ys, Lu, V1, V2, V3, TSu, K11, Ku, K21, XY1, XY2 : text,
+                C1, IDsi, R1, R2, S1, S2, T1, T2, Wsk, SignG, SignS :text,
+                Xu, Xg, Xs, Du, Zi, TSsi :text,
+                        
+                %%% EM is the ECC point multiplication
+                %%% EA is the ECC point addition
+                %%% Othr is normal calculations 
+                EA, EM, Othr: hash_func 
+        const 
+                sp1, sp2, sp3, sp4, sp5, sp6, u_gn_v1, u_gn_v2, u_gn_v3, u_gn_tsu: protocol_id
+                
+        init  
+                State := 0
+  
+transition
+%%% User Signencryption Phase
+1. State = 0 /\ Rcv(start) =|>             
+State' := 1  /\ V1' := new() /\ V2' := new() /\ V3' := new()
+             /\ TSu' := new()
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% calculation of message m1
+             /\ K11'    := H(EM(V1'.G)) 
+             /\ K21'    := H(EM(V2'.G))
+             /\ XY1'    := EA(EM(V1'.G).EM(Ku.Yg))
+             /\ XY2'    := EA(EM(V2'.G).EM(Ku.Ys))
+             /\ C1'     := xor((IDsi.V3'),H(XY1'.Ku.Yg))
+             /\ R1'     := H(XY1'.C1'.K11'.Lu.Yg.TSu')
+             /\ R2'     := H(XY2'.K21'.Lu.Ys)
+             /\ S1'     := Othr(V1'.R1'.Ku)             
+             /\ S2'     := Othr(V2'.R2'.Ku)
+             /\ T1'     := EM(R1'.G) 
+             /\ T2'     := EM(R2'.G)
+             /\ Wsk'    := xor(H(R1'.TSu'),H(V3'.Ku.Yg))
+             /\ SignG'  := Othr(H(C1'.T1'.T2'.S1'.S2'.Wsk'.Lu.TSu'.XY1').Xu) 
+             /\ SignS'  := Othr(H(T2'.S2'.Lu.XY2').Xu)
+
+ 
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             %%%%Secrets
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             /\ secret({Xg}, sp1, {GN})
+             /\ secret({Xs}, sp2, {Si})
+             /\ secret({Xu,Du,Ku}, sp3, {U})
+             /\ secret({Zi}, sp4, {Si,GN}) 
+             /\ secret({V1',V3'}, sp5, {U,GN})
+             /\ secret({V2'}, sp6, {U, Si})
+
+ 
+
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             %%% Send mesaage m1 to the gateway node GN via public channel
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             /\ Snd(C1'.T1'.T2'.S1'.S2'.Wsk'.TSu'.SignG'.SignS')
+
+ 
+
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             %% U has freshly generated the values v1, v3 and TSu for GN
+             %%               generated the value of v2 for Si  
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             /\ witness(U, GN, u_gn_v1, V1')
+             /\ witness(U, GN, u_gn_v3, V3')
+             /\ witness(U, GN, u_gn_tsu, TSu')
+             /\ witness(U, Si, u_gn_v2, V2')
+
+ 
+
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             %%% Receive message m3 from smart device Si via public channel
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+ 
+
+2. State = 1 /\ Rcv(H(H(EA(EM(V2'.G).EM(Ku.Ys)).
+                           H(EM(V2'.G)).
+                           Lu.
+                           Ys).
+
+ 
+
+                           H(H(EA(EM(V1'.G).EM(Ku.Yg)).
+                               xor((IDsi.V3'),H(EA(EM(V1'.G).EM(Du.Xg)).Ku.Yg)).
+                               H(EM(V1'.G)).
+                               Lu.
+                               Yg.
+                               TSu').TSu').
+
+ 
+
+                           EA(EM(V2'.G).EM(Ku.Ys))).TSsi'.
+
+ 
+
+                    TSsi')  =|>    
+             
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             % U's acceptance of the values TSsi for U by Si 
+             %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+   State' := 2 /\ request(Si, U, si_u_tssi, TSsi')         
+end role
+
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Role for the GatewayNode (GN)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+role GatewayNode (U, GN, Si: agent, 
+		  %%% H is one-way hash function
+		  H: hash_func,
+		  Snd, Rcv: channel(dy))
+		  
+played_by GN
+
+def=
+	local
+		state: nat,
+		G, Du, V1, V2, V3, Xu, Ku, Lu, Xg, Yg, Xs, Ys, IDsi : text,
+		Zi,TSu, TSsi, TSgn, M, Lmod :text,
+		
+		EA, EM, Othr: hash_func
+		
+	const
+		sp1, sp2, sp3, sp4, sp5,sp6 : protocol_id, 
+		u_gn_v1, u_gn_v2, u_gn_v3, u_gn_tsu, gn_si_tsgn : protocol_id
+
+
+	init
+		state := 0
+
+transition
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%Rcv(C1', T1', T2', S1', S2', Wsk', TSu', SignG', SignS')
+%	     /\ K11'    := H(EM(V1'.G)) 
+%            /\ K21'    := H(EM(V2'.G))
+%            /\ XY1'    := EA(EM(V1'.G).EM(Ku.Yg))
+%            /\ XY2'    := EA(EM(V2'.G).EM(Ku.Ys))
+%            /\ C1'     := xor((IDsi.V3'),H(XY1'.Ku.Yg))
+%            /\ R1'     := H(XY1'.C1'.K11'.Lu.Yg.TSu')
+%            /\ R2'     := H(XY2'.K21'.Lu.Ys)
+%            /\ S1'     := Othr(V1'.R1'.Ku)             
+%            /\ S2'     := Othr(V2'.R2'.Ku)
+%            /\ T1'     := EM(R1'.G) 
+%            /\ T2'     := EM(R2'.G)
+%            /\ Wsk'    := xor(H(R1'.TSu'),H(V3'.Ku.Yg))
+%            /\ SignG'  := Othr(H(C1'.T1'.T2'.S1'.S2'.Wsk'.Lu.TSu'.XY1').Xu) 
+%            /\ SignS'  := Othr(H(T2'.S2'.Lu.XY2').Xu)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+1. state = 0 /\ Rcv(   xor((IDsi.V3'),H(EA(EM(V1'.G).EM(Ku.Yg)).Ku.Yg)).     
+			
+			EM(H( EA(EM(V1'.G).EM(Ku.Xg)).  
+				xor((IDsi.V3'),H(EA(EM(V1'.G).EM(Ku.Yg)).Ku.Yg)). 
+				H(EM(V1'.G)). 
+				Lu. 
+				Yg. 
+				TSu'). G).
+			
+			EM(H( EA(EM(V2'.G).EM(Ku.Ys)). 
+				H(EM(V2'.G)).
+				Lu. 
+				Ys). G).
+			
+			Othr(V1'. 
+			    H( EA(EM(V1'.G).EM(Ku.Yg)). 
+				xor((IDsi.V3'),H(EA(EM(V1'.G).EM(Ku.Yg)).Ku.Yg)).
+				H(EM(V1'.G)).
+				Lu. 
+				Yg. 
+				TSu'). Ku).
+				
+			Othr(V2'.
+			     H( EA(EM(V2'.G).EM(Ku.Ys)). 
+				H(EM(V2'.G)).
+				Lu. 
+				Ys). Ku).
+				
+			xor( H( H( EA(EM(V1'.G).EM(Ku.Yg)). 
+				xor((IDsi.V3'),H(EA(EM(V1'.G).EM(Ku.Yg)).Ku.Yg)).
+				H(EM(V1'.G)).
+				Lu. 
+				Yg. 
+				TSu'). TSu'), H(V3'.Ku.Xg)).
+			
+			TSu.
+			
+			Othr(H( xor((IDsi.V3'),H(EA(EM(V1'.G).EM(Ku.Yg)).Ku.Yg)).
+				EM( H( EA(EM(V1'.G).EM(Ku.Yg)).  
+					xor((IDsi.V3'),H(EA(EM(V1'.G).EM(Ku.Yg)).Ku.Yg)).                                                                                                           
+					H(EM(V1'.G)). 
+					Lu. 
+					Yg. 
+					TSu'). G).
+				EM( H( EA(EM(V2'.G).EM(Ku.Ys)). 
+					H(EM(V2'.G)).
+					Lu. 
+					Ys). G).
+					
+				Othr(V1'. 
+				    H( EA(EM(V1'.G).EM(Ku.Yg)). 
+					xor((IDsi.V3'),H(EA(EM(V1'.G).EM(Ku.Yg)).Ku.Yg)).
+					H(EM(V1'.G)).
+					Lu. 
+					Yg. 
+					TSu'). Ku).
+				Othr(V2'.
+				     H( EA(EM(V2'.G).EM(Ku.Ys)). 
+					H(EM(V2'.G)).
+					Lu. 
+					Ys). Ku).
+				xor( H( H( EA(EM(V1'.G).EM(Ku.Yg)). 
+					xor((IDsi.V3'),H(EA(EM(V1'.G).EM(Ku.Xg)).Ku.Xg)).
+					H(EM(V1'.G)).
+					Lu. 
+					Yg. 
+					TSu'). TSu'), H(V3'.Ku.Xg)).
+				
+				Lu.
+				TSu.
+				EA(EM(V2'.G).EM(Ku.Yg))). Xu).
+				
+			Othr( H( EM(H( EA(EM(V2'.G).EM(Ku.Ys)). 
+					H(EM(V2'.G)).
+					Lu. 
+					Ys). G).
+				 Othr(V2'.
+				      H( EA(EM(V2'.G).EM(Ku.Ys)). 
+					H(EM(V2'.G)).
+					Lu. 
+					Ys). 
+				      Ku).	
+				 Lu.
+				 EA(EM(V2'.G).EM(Ku.Ys)).). Xu)) =|>
+
+				
+state':=1 /\ TSgn' := new()
+	  /\Lmod' := xor(Lu,H(Zi.TSgn'))
+	  
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%% calculation of message M
+
+	  /\M' := xor( H( H( EA(EM(V2'.G).EM(Ku.Yg)).
+			     xor((IDsi.V3'),H(EA(EM(V1'.G).EM(Ku.Yg)).Ku.Yg)). 
+			     H(EM(V1'.G)). 
+			     Lu. 
+			     Yg. 
+			     TSu').
+			  TSu'),
+		       H(Zi.TSgn'.Lu))
+		       
+		       
+	 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             %%%%Secrets
+         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	 
+	 /\ secret({Xg},sp1,{GN})
+	 /\ secret({Xs},sp2,{Si})	
+	 /\ secret({Xu,Du,Ku},sp3,{U})
+	 /\ secret({Zi},sp4,{GN,Si})
+	 /\ secret({V1', V3'},sp5,{U,GN})
+	 /\ secret({V2'},sp6,{U,Si})
+	 
+	 
+	 
+	 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             %%% Send mesaage m2 to the smart device Si via public channel
+             %%% m2 = <T2,S2,M,Lmod,TSgn,SignS>
+         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	 /\ Snd( EM(H( EA(EM(V2'.G).EM(Ku.Ys)). 
+				H(EM(V2'.G)).
+				Lu. 
+				Ys). G).
+			
+	 	 Othr(V2'.
+		     H( EA(EM(V2'.G).EM(Ku.Ys)). 
+			H(EM(V2'.G)).
+			Lu. 
+			Ys). Ku). 
+			  
+		 M'.
+		 Lmod'.
+		 TSgn'.
+		 Othr( H( EM(H( EA(EM(V2'.G).EM(Ku.Ys)). 
+				H(EM(V2'.G)).
+				Lu. 
+				Ys). G).
+			 Othr(V2'.
+			      H( EA(EM(V2'.G).EM(Ku.Ys)). 
+				H(EM(V2'.G)).
+				Lu. 
+				Ys). 
+			      Ku).	
+			 Lu.
+			 EA(EM(V2'.G).EM(Ku.Ys)).). Xu))
+	
+	
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             %% GN has freshly generated the values TSgn for Si
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             /\ witness(GN, Si, gn_si_tsgn, TSgn')
+          
+          
+             
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             % GN's acceptance of the values  V1,V2,V3,TSu by U 
+       %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%   
+             /\ request(U, GN, u_gn_v1, V1')
+             /\ request(U, GN, u_gn_v3, V3')	
+             /\ request(U, GN, u_gn_tsu, TSu')
+             /\ request(U, Si, u_gn_v2, V2')
+             
+end role
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Role for the smartDevice (Si)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+role smartDevice(U, GN, Si: agent, 
+		  %%% H is one-way hash function
+		  H: hash_func,
+		  Snd, Rcv: channel(dy))
+
+played_by Si
+def =
+
+	local 
+		state: nat,
+		G, IDsi, Xs, Ys, Lu, Ku, Xu, V1, V2, V3, Xg, Yg, Du: text,
+   		TSu, TSgn, TSsi, SKsiu, VSKsiu, Zi, M : text, 	 
+				
+		EA, EM, Othr: hash_func
+		
+	const
+		sp1, sp2, sp3, sp4, sp5,sp6 : protocol_id, 
+		u_gn_v1, u_gn_v2, u_gn_v3, u_gn_tsu, gn_si_tsgn : protocol_id
+		
+	init 
+		state := 0
+		
+			
+transition
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%%Rcv(T2,S2,M,Lmod,TSgn,SignS)
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%			
+			    
+1. state = 0 /\ Rcv( ..... )	=|>
+
+state' := 1 /\ SKsiu' = %% H((R2+1)||H(R1||TSu)||XY2)
+	    /\ TSsi' = new()
+	    /\ VSKsiu' = %% H(SKsiu'||TSsi')
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+
+	 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             %%%%Secrets
+         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+	 
+	 /\ secret({Xg},sp1,{GN})
+	 /\ secret({Xs},sp2,{Si})	
+	 /\ secret({Xu,Du,Ku},sp3,{U})
+	 /\ secret({Zi},sp4,{GN,Si})
+	 /\ secret({V1', V3'},sp5,{U,GN})
+	 /\ secret({V2'},sp6,{U,Si})
+
+
+
+	 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             %%% Send mesaage m2 to the smart device Si via public channel
+             %%% m3 = <VSKsiu, TSsi>
+         %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%			                  
+			
+	/\ Snd(..)
+	
+	
+	
+	%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             %% Si has freshly generated the values TSsi for U
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             /\ witness(Si, U, si_u_tssi, TSsi')
+           
+           
+             
+        %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+             % Si's acceptance of the values TSgn  by GN 
+       %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%   
+             /\ request(GN, Si, gn_si_tsgn, TSgn')
+             
+end role
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Role for the session
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+role session(U, GN, Si: agent, 
+		  %%% H is one-way hash function
+		  H: hash_func)
+		  
+def= 
+	local Send1, Send2, Send3, Recv1, Recv2, Recv3 : channel(dy)
+	
+	composition
+	           user ( U, GN, Si, H, Send1, Recv1)
+		/\ GatewayNode ( U, GN, Si, H, send2, Recv2)
+		/\ smartDevice ( U, GN, Si, H, send3, Recv3)
+
+end role
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Role for the environment
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+role environment()
+def=
+	const u, gn, si: agent,
+	      h, ea, em, othr: hash_func,
+	      tsu, tsgn,tssi, g: text,
+	      sp1, sp2, sp3, sp4, sp5, sp6: protocol_id,
+	      u_gn_v1, u_gn_v2, u_gn_v3, u_gn_tsu, gn_si_tsgn, si_u_tssi: protocol_id
+             
+
+	intruder_knowledge = {u, gn, si, h, em, ea, othr, tsu, tsgn, tssi, g}
+	
+	composition
+		   session(u, gn, si, h)
+		/\ session(i, gn, si, h)
+		/\ session(u, i, si, h)
+		/\ session(u, gn, i, h)
+		
+end role
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+%% Goal
+%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
+goal
+
+	secrecy_of sp1, sp2, sp3, sp4, sp5, sp6
+	
+	authentication_on u_gn_v1, u_gn_v2, u_gn_v3, u_gn_tsu, gn_si_tsgn, si_u_tssi
+	
+end goal
+
+environment()	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
